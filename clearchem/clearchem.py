@@ -19,9 +19,9 @@
             → 分布内插值可信，新体系不可信
     MD 层   simulate_conductivity() 走 MACE-MP-0b2 分子动力学，不依赖实验数据，
             因而能算尺子外推不了的新体系。代价是每个配方约 3.4 小时（1 ns，单卡）。
-            实测 1M LiPF6 EC:DMC：D=6.8e-07 cm²/s（文献 1.5e-6~3e-6）、
-            电导 7.09 mS/cm vs 实验 10.0（0.71×）。6 个离子的标准误 27%，
-            当前只够判量级与趋势，排序分辨力待实测。
+            实测 1M LiPF6 EC:DMC：D=6.8e-07 cm²/s（文献 1.5e-6~3e-6）、电导 0.71×实验值。
+            ⚠ 排序分辨力已实测且不合格：换随机种子重跑，D 相差 1.84 倍，
+            大于 EC:DMC 与 PC 之间 1.72 倍的真实差距 —— 单次运行不能用于配方比较。
 """
 import json, os, sys, time
 import numpy as np
@@ -275,8 +275,10 @@ class ClearChem:
                         got[key] = float(ln.split(pat)[1].split()[0])
                     except (ValueError, IndexError):
                         pass
-        got["caveat"] = ("MACE-MP-0b2 势能面，实测 1M LiPF6 EC:DMC 电导 0.71×实验值。"
-                         "6 个离子的标准误约 27%，当前只支持量级与趋势判断。"
+        got["caveat"] = ("⚠ 不可用于配方排序。同体系换随机种子实测 D 相差 1.84 倍"
+                         "（6.79e-07 vs 3.70e-07 cm²/s），而 EC:DMC 与 PC 的实验电导只差 "
+                         "1.72 倍 —— 自身波动大于要分辨的差距。单次结果只能读数量级。"
+                         "要能排序需每配方 5~8 个种子或把离子数提到 24+，代价 17~27 小时/配方。"
                          if got.get("trustworthy") else
                          "轨迹未进入扩散区（MSD 仍亚扩散），D 与电导率均不可用，请加长 ps。")
         return got
