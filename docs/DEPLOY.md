@@ -174,7 +174,7 @@ model.eval()
 ```
 
 **注意**：ChemBench 0.6445 那个成绩是 **agent 系统**成绩，数值题接了 Python 工具执行。
-纯模型（不接工具）是 0.6185。工具的实现见 `docs/TECHNICAL.md` 第 1.3 节。
+纯模型（不接工具）实测 0.6316。工具的实现见 `docs/TECHNICAL.md` 第 1.3 节。
 
 ---
 

@@ -36,12 +36,13 @@ ClearChem 把四类能力收在一个可调用的系统里，围绕**电解液�
 | 2 | claude3.5 | 0.6255 |
 | 3 | claude3.5-react | 0.6248 |
 | 4 | gpt-4o | 0.6108 |
+| — | **ClearChem-Qwen 纯模型**（不接工具） | **0.6316** |
 | — | 裸底座 Qwen3.8-27B | 0.5964 |
 
 相对裸底座 **+4.81 个百分点**，配对 McNemar 检验 **p < 1e-4**（翻对 318 题 / 翻错 184 题）。
 
 > **口径说明**：这是 **agent 系统**成绩，数值题接了 Python 工具执行，
-> 与榜上 `claude3.5-react`、`paper-qa` 同类。裸模型（不接工具）为 0.6185。
+> 与榜上 `claude3.5-react`、`paper-qa` 同类。裸模型（不接工具）为 0.6316。
 
 ---
 
@@ -184,6 +185,7 @@ clearchem/          集成层与各能力模块
 models/             模型权重（见 models/README.md 的下载与校验说明）
 docs/               技术文档
   DEPLOY.md           逐步部署指南（三种场景 + 常见问题）
+  RUN_CHEMBENCH.md    一步步跑 ChemBench（每步的预期输出）
   REPRODUCE.md        复现指南（跑分需要额外准备什么）
   TECHNICAL.md        方法、训练配方、消融实验
   BENCHMARKS.md       全部实测数据与统计检验
