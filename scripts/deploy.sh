@@ -115,13 +115,32 @@ print("  核心依赖就绪 · torch %s · CUDA %s"
 PYCHK
 
 # ---------- 2. 仓库与权重 ----------
-if [ ! -d "$ROOT/.git" ]; then
+# 若脚本本身就在一份克隆里运行（用户按 README 先 clone 再跑），直接用这一份，
+# 不要因为"数据盘更大"就再克隆一遍（那会重复下载 1.2 GB）。
+_SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -d "$_SELF_DIR/.git" ] && [ -f "$_SELF_DIR/scripts/deploy.sh" ]; then
+  if [ "$ROOT" != "$_SELF_DIR" ]; then
+    _self_gb=$(df -Pk "$_SELF_DIR" 2>/dev/null|tail -1|awk '{print int($4/1048576)}')
+    _self_gb=${_self_gb:-0}
+    if [ "$WANT_BASE" = 1 ] && [ "$_self_gb" -lt 70 ]; then
+      w "当前克隆在 $_SELF_DIR（可用 ${_self_gb} GB），装不下底座"
+      echo "     方案一：只用轻量档 → bash scripts/deploy.sh --lite"
+      echo "     方案二：移到大盘  → mv $_SELF_DIR $ROOT && cd $ROOT && bash scripts/deploy.sh"
+      w "本次自动降级为轻量档（性质预测 + 配方推荐照常可用）"
+      WANT_BASE=0; WANT_GEN=0
+    fi
+    ROOT="$_SELF_DIR"
+    FREE_GB=$_self_gb
+  fi
+  c "使用当前克隆 $ROOT（可用 ${FREE_GB} GB）"
+  git -C "$ROOT" pull --ff-only -q 2>/dev/null || true
+elif [ ! -d "$ROOT/.git" ]; then
   [ "$NET_OK" = 0 ] && die "无网且 $ROOT 不存在，请先手动放置仓库"
   c "克隆仓库 → $ROOT"
   git clone "$REPO" "$ROOT" || die "克隆失败"
 else
-  c "仓库已存在，尝试更新"
-  git -C "$ROOT" pull --ff-only 2>/dev/null || w "  更新失败，用现有版本"
+  c "仓库已存在 $ROOT，尝试更新"
+  git -C "$ROOT" pull --ff-only -q 2>/dev/null || w "  更新失败，用现有版本"
 fi
 cd "$ROOT" || die "进不去 $ROOT"
 
