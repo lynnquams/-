@@ -102,8 +102,23 @@ def main():
         assert os.path.exists(os.path.join(base, "config.json")), "Qwen 底座未就位"
         adp = cfg.get("adapters", {}).get("qwen", os.path.join(root, "models/clearchem-qwen"))
         assert os.path.exists(os.path.join(adp, "adapter_model.safetensors")), "适配器缺失"
-        return "底座与适配器就位（推理需自行加载，见 docs/TECHNICAL.md）"
+        # 维度校验：底座与适配器对不上说明下错了版本
+        bc = json.load(open(os.path.join(base, "config.json")))
+        tc = bc.get("text_config", bc)
+        ac = json.load(open(os.path.join(adp, "adapter_config.json")))
+        return "底座 %d层/hidden %s ↔ 适配器 rank %s" % (
+            tc.get("num_hidden_layers", -1), tc.get("hidden_size"), ac.get("r"))
     check("知识层权重", qwen, required=False)
+
+    # 7. 知识层真实推理（需 54GB 底座 + 足够显存，可选）
+    def qwen_infer():
+        sys.path.insert(0, root)
+        from clearchem.knowledge import ChemQwen
+        q = ChemQwen()
+        a = q.ask("What is the chemical formula of water?")
+        assert a and len(a) < 200, "回答异常：%r" % a[:60]
+        return "问答可用：%s" % a[:40].replace("\n", " ")
+    check("知识层推理", qwen_infer, required=False)
 
     print()
     if _fails:

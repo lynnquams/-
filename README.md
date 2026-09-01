@@ -89,6 +89,18 @@ for x in f["results"]:
 
 # 性质预测
 cc.predict(["CCOC(=O)OC", "C1COC(=O)O1"])
+
+# 知识层：化学问答（需 Qwen 底座 54 GB）
+from clearchem import ChemQwen
+q = ChemQwen()
+q.ask("What is the molecular formula of ethylene carbonate?")
+
+# 计算类问题开工具，模型写 Python 求解并执行
+q.ask("How many distinct 1H NMR signals does toluene have?", tool=True)
+# → {'answer': 4.0, 'via': 'python', 'code': '...'}
+
+# 多选题
+q.choose("Which is a cyclic carbonate?", ["DMC", "EC", "EA", "THF"])
 ```
 
 实际输出：
@@ -164,7 +176,9 @@ cc.predict(["CCOC(=O)OC", "C1COC(=O)O1"])
 
 ```
 clearchem/          集成层与各能力模块
-  clearchem.py        主类：design_molecule / design_formulation / predict
+  clearchem.py        分子层与配方层：design_molecule / design_formulation / predict
+  knowledge.py        知识层：ask / choose，含 Python 工具执行
+  selfcheck.py        部署自检（真实调用每一层）
   generate_api.py     分子生成命令行接口
   formulate.py        配方推荐命令行接口
 models/             模型权重（见 models/README.md 的下载与校验说明）
