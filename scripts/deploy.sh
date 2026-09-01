@@ -12,7 +12,25 @@
 #   GPU ≥ 60 GB                + 知识问答（27B）             需 ~120 GB
 set -uo pipefail
 
-ROOT="${CLEARCHEM_ROOT:-$HOME/clearchem}"
+# 默认装到 $HOME/clearchem；但很多云主机 $HOME 在小系统盘上，
+# 数据盘另挂（如 /root/autodl-tmp、/data、/mnt）。自动挑最大的可写盘。
+if [ -n "${CLEARCHEM_ROOT:-}" ]; then
+  ROOT="$CLEARCHEM_ROOT"
+else
+  ROOT="$HOME/clearchem"
+  _home_gb=$(df -Pk "$HOME" 2>/dev/null|tail -1|awk '{print int($4/1048576)}')
+  _home_gb=${_home_gb:-0}
+  if [ "$_home_gb" -lt 70 ]; then
+    for _d in /root/autodl-tmp /data /mnt/data /mnt /workspace /opt; do
+      [ -d "$_d" ] && [ -w "$_d" ] || continue
+      _g=$(df -Pk "$_d" 2>/dev/null|tail -1|awk '{print int($4/1048576)}')
+      _g=${_g:-0}
+      if [ "$_g" -gt "$_home_gb" ] && [ "$_g" -ge 70 ]; then
+        ROOT="$_d/clearchem"; _home_gb=$_g
+      fi
+    done
+  fi
+fi
 PY="${PYTHON:-python3}"
 MODE="${1:-full}"
 MIRROR="${HF_ENDPOINT:-https://hf-mirror.com}"
@@ -25,9 +43,20 @@ die() { e "$*"; exit 1; }
 
 # ---------- 0. 环境探测（不假设任何东西）----------
 c "探测运行环境"
-command -v "$PY" >/dev/null 2>&1 || { for p in python3.12 python3.11 python3.10 python; do
-    command -v $p >/dev/null 2>&1 && PY=$p && break; done; }
-command -v "$PY" >/dev/null 2>&1 || die "找不到 python3（试过 python3/3.12/3.11/3.10/python）"
+if ! command -v "$PY" >/dev/null 2>&1; then
+  # PATH 里没有就去常见安装位置找（conda/miniconda/pyenv 装的通常不在 PATH）
+  for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python \
+              /root/miniconda3/bin/python3 /root/miniconda3/bin/python \
+              /opt/conda/bin/python3 /usr/local/bin/python3 \
+              "$HOME/miniconda3/bin/python3" "$HOME/anaconda3/bin/python3" \
+              "$HOME/.pyenv/shims/python3"; do
+    if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+    if [ -x "$cand" ]; then PY="$cand"; break; fi
+  done
+fi
+command -v "$PY" >/dev/null 2>&1 || [ -x "$PY" ] || \
+  die "找不到 python3。已试过 PATH 与 conda/miniconda/pyenv 常见位置。
+     可显式指定：PYTHON=/你的/python3 bash scripts/deploy.sh"
 PYVER=$($PY -c 'import sys;print("%d.%d"%sys.version_info[:2])')
 c "  Python $PYVER ($PY)"
 $PY -c 'import sys; sys.exit(0 if sys.version_info>=(3,9) else 1)' || die "需要 Python ≥3.9，当前 $PYVER"
@@ -44,7 +73,7 @@ fi
 
 FREE_GB=$(df -Pk "$(dirname "$ROOT")" 2>/dev/null | tail -1 | awk '{print int($4/1048576)}')
 FREE_GB=${FREE_GB:-0}
-c "  可用磁盘 ${FREE_GB} GB"
+c "  安装目录 $ROOT（可用 ${FREE_GB} GB）"
 
 # 网络探测：决定用不用镜像、能不能下底座
 NET_OK=0
