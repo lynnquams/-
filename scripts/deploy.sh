@@ -146,7 +146,7 @@ cd "$ROOT" || die "进不去 $ROOT"
 
 # 大权重按 90 MB 分卷存放（Gitee 免费仓库不支持 LFS），克隆后合并一次
 c "合并分卷权重"
-bash scripts/assemble_weights.sh || die "权重合并失败"
+PYTHON="$PY" bash scripts/assemble_weights.sh || die "权重合并失败"
 
 # ---------- 3. 底座（可选）----------
 # 按显存决定下哪些底座：ether0 用于分子生成，Qwen3.8-27B 用于知识问答

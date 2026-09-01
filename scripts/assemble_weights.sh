@@ -7,6 +7,21 @@
 # 幂等：已合并过会跳过。合并后校验 SHA256，不匹配直接报错。
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+
+# python 解释器：优先用调用方传进来的（deploy.sh 已探测好），
+# 否则自己找一遍 —— 云主机常用 conda，python3 未必在 PATH。
+PY="${PYTHON:-}"
+if [ -z "$PY" ] || ! { command -v "$PY" >/dev/null 2>&1 || [ -x "$PY" ]; }; then
+  for cand in python3 python3.13 python3.12 python3.11 python3.10 python \
+              /root/miniconda3/bin/python3 /opt/conda/bin/python3 \
+              "$HOME/miniconda3/bin/python3" "$HOME/anaconda3/bin/python3"; do
+    if command -v "$cand" >/dev/null 2>&1 || [ -x "$cand" ]; then PY="$cand"; break; fi
+  done
+fi
+if [ -z "$PY" ]; then
+  echo "  ! 找不到 python，跳过权重校验（合并本身已完成）"
+  PY=":"
+fi
 P=models/_parts
 [ -d "$P" ] || { echo "找不到 $P，仓库不完整"; exit 1; }
 
@@ -32,7 +47,8 @@ for t in "${TARGETS[@]}"; do
 done
 
 # 校验：文件头必须是 safetensors 的 JSON 长度前缀 / torch 的 zip 魔数
-python3 - <<'PYCHK' || { echo "  ✗ 合并后的权重无法加载"; exit 1; }
+if [ "$PY" != ":" ]; then
+"$PY" - <<'PYCHK' || { echo "  ✗ 合并后的权重无法加载"; exit 1; }
 import json, struct, sys, os
 bad = []
 for f in ["models/clearchem-qwen/adapter_model.safetensors",
@@ -60,4 +76,5 @@ if bad:
     print("  校验失败：" + " | ".join(bad)); sys.exit(1)
 print("  ✓ 权重校验通过")
 PYCHK
+fi
 echo "合并 $ok 个，跳过 $skip 个"
