@@ -13,7 +13,11 @@
             ip/ea 尺子样本仅1.6万、Spearman 0.79，结论要打折
     配方层  电导率尺子跨文献外推 5 折 R² 全部 ≤0.29（三折为负）
             → 分布内插值可信，新体系不可信
-    未接    新生成的分子进不了配方评估（需要 MLIP，MACE-OMol 扩散慢 2500 倍暂不可用）
+    MD 层   simulate_conductivity() 走 MACE-MP-0b2 分子动力学，不依赖实验数据，
+            因而能算尺子外推不了的新体系。代价是每个配方约 3.4 小时（1 ns，单卡）。
+            实测 1M LiPF6 EC:DMC：D=6.8e-07 cm²/s（文献 1.5e-6~3e-6）、
+            电导 7.09 mS/cm vs 实验 10.0（0.71×）。6 个离子的标准误 27%，
+            当前只够判量级与趋势，排序分辨力待实测。
 """
 import json, os, sys, time
 import numpy as np
@@ -213,6 +217,52 @@ class ClearChem:
                 "caveat": "gap 尺子 MAE 0.404；ip/ea 尺子 Spearman 0.79，结论打折"}
 
     # ---------- 配方层 ----------
+    def simulate_conductivity(self, comp, rho=1.20, n_ion=6, ps=1000,
+                              seed=0, k_exp=None, tag=None):
+        """用分子动力学算电导率 —— 打分器外推不了的体系走这条路。
+
+        comp   溶剂组成，如 {"EC": 10, "DMC": 10}；支持的分子见 md/run_md.py 的 SMILES
+        rho    目标密度 g/cm³（体积由此定，别用默认值套新体系）
+        ps     产出轨迹长度，1000 ps 约 3.4 小时/单卡
+
+        返回值里 trustworthy=False 时 sigma 不可用：说明轨迹没进扩散区，
+        MSD 还是亚扩散的，此时算出的 D 没有物理意义。
+        """
+        import subprocess, tempfile
+        md = os.path.join(_HERE, "md", "run_md.py")
+        if not os.path.exists(md):
+            return {"error": "MD 组件未安装", "path": md}
+        tag = tag or ("md%d" % int(time.time()))
+        env = dict(os.environ,
+                   COMP=json.dumps(comp), RHO=str(rho), NION=str(n_ion),
+                   TPROD=str(int(ps * 1000 / 2)),   # DT=2 fs
+                   TEQ="25000", SEED=str(seed), RUNTAG=tag,
+                   SYS=":".join(comp), KEXP=str(k_exp if k_exp else 0.0),
+                   MD_OUT=os.path.join(ROOT, "runs"))
+        t0 = time.time()
+        r = subprocess.run([sys.executable, md], env=env,
+                           capture_output=True, text=True)
+        out = r.stdout
+        got = {"tag": tag, "minutes": round((time.time() - t0) / 60, 1),
+               "composition": comp, "trajectory_ps": ps, "log": out[-2000:]}
+        if r.returncode != 0:
+            got["error"] = r.stderr[-800:]
+            return got
+        # 未进扩散区时脚本自身会拒绝报数，这里如实透传
+        got["trustworthy"] = "不报数" not in out
+        for key, pat in (("D_cm2_s", "D = "), ("sigma_mS_cm", "σ = ")):
+            for ln in out.splitlines():
+                if pat in ln:
+                    try:
+                        got[key] = float(ln.split(pat)[1].split()[0])
+                    except (ValueError, IndexError):
+                        pass
+        got["caveat"] = ("MACE-MP-0b2 势能面，实测 1M LiPF6 EC:DMC 电导 0.71×实验值。"
+                         "6 个离子的标准误约 27%，当前只支持量级与趋势判断。"
+                         if got.get("trustworthy") else
+                         "轨迹未进入扩散区（MSD 仍亚扩散），D 与电导率均不可用，请加长 ps。")
+        return got
+
     def design_formulation(self, k_target, T=298.15, n=8, pool=20000, salt=""):
         """给目标电导率推荐配方。从真实配方采样+扰动+打分，不训生成模型。"""
         assert self.cond is not None, "配方尺子未加载"

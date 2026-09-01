@@ -11,6 +11,7 @@ peft>=0.10
 accelerate>=0.28
 safetensors>=0.4
 
-# 可选：MLIP 分子动力学（见 docs/TECHNICAL.md 第 4 节，当前不推荐用于输运性质）
-# mace-torch>=0.3.13
-# ase>=3.22
+# 分子动力学（simulate_conductivity 需要，势能面权重已随仓库分发）
+# 只有换新体系、打分器不敢外推时才用；每个配方约 3.4 小时/单卡
+mace-torch>=0.3.13
+ase>=3.22

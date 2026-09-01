@@ -120,6 +120,30 @@ def main():
         return "问答可用：%s" % a[:40].replace("\n", " ")
     check("知识层推理", qwen_infer, required=False)
 
+    def mlip():
+        import importlib.util
+        for m in ("mace", "ase"):
+            assert importlib.util.find_spec(m), "缺依赖 %s（pip install mace-torch ase）" % m
+        w = os.path.join(root, "models", "mlip", "mace-mp-0b2-medium.model")
+        assert os.path.exists(w), "势能面权重缺失 %s" % w
+        import torch
+        mo = torch.load(w, map_location="cpu", weights_only=False)
+        n = sum(p.numel() for p in mo.parameters())
+        return "势能面可加载：%.2fM 参数、%d 种元素" % (n / 1e6, len(mo.atomic_numbers))
+    check("分子动力学", mlip, required=False)
+
+    def mlip_run():
+        # 真跑一小段，不只是加载。20 步足以暴露几何/近邻表/设备问题。
+        import subprocess
+        env = dict(os.environ, COMP='{"EC":2,"DMC":2}', RHO="1.2", NION="1",
+                   TPROD="20", TEQ="20", RUNTAG="selfcheck",
+                   MD_OUT=os.path.join(root, "runs"))
+        r = subprocess.run([sys.executable, os.path.join(root, "clearchem", "md", "run_md.py")],
+                           env=env, capture_output=True, text=True, timeout=1800)
+        assert "最小原子间距" in r.stdout, "MD 未跑到建盒：%s" % (r.stderr[-200:] or r.stdout[-200:])
+        return "MD 可运行（20 步冒烟）"
+    check("分子动力学运行", mlip_run, required=False)
+
     print()
     if _fails:
         print("\033[1;31m自检未通过：%s\033[0m\n" % "、".join(_fails))
