@@ -13,5 +13,8 @@ safetensors>=0.4
 
 # 分子动力学（simulate_conductivity 需要，势能面权重已随仓库分发）
 # 只有换新体系、打分器不敢外推时才用；每个配方约 3.4 小时/单卡
+# 电解液分子的轨道能级（orbitals/screen_additive 需要，秒级、纯 CPU）
+tblite>=0.3
+
 mace-torch>=0.3.13
 ase>=3.22

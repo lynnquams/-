@@ -11,6 +11,10 @@
 已知边界（在返回值里明确标注，不许隐瞒）：
     分子层  gap 尺子 MAE 0.404，条件遵循实测 MAE 0.109（六点偏差 ±0.03）
             ip/ea 尺子样本仅1.6万、Spearman 0.79，结论要打折
+            ⚠ 尺子在电解液分子上不可用：电化学排序检验 2/6（随机是 3/6），
+              且把 VC/FEC 判成比 EC 更难还原，与成膜机理相反。
+              根因是碳酸酯 LUMO 真实跨度 1.17 eV 被压成 0.27 eV，
+              而尺子自身 MAE 就是 0.28 eV。电解液分子一律走 qm.orbitals()。
     配方层  电导率尺子跨文献外推 5 折 R² 全部 ≤0.29（三折为负）
             → 分布内插值可信，新体系不可信
     MD 层   simulate_conductivity() 走 MACE-MP-0b2 分子动力学，不依赖实验数据，
@@ -217,6 +221,20 @@ class ClearChem:
                 "caveat": "gap 尺子 MAE 0.404；ip/ea 尺子 Spearman 0.79，结论打折"}
 
     # ---------- 配方层 ----------
+    def orbitals(self, smiles):
+        """电解液分子的 HOMO/LUMO/gap —— 走 GFN2-xTB，不走尺子。
+
+        尺子在电解液窄带内失效（排序 2/6），xTB 同一套检验 6/6 且数值合文献。
+        约 1 秒/分子，不需要 GPU。
+        """
+        from clearchem import qm
+        return qm.orbitals(smiles)
+
+    def screen_additive(self, smiles, reference="C1COC(=O)O1"):
+        """筛成膜添加剂：LUMO 比参照溶剂低多少。实测 VC 低 0.372、FEC 低 0.566 eV。"""
+        from clearchem import qm
+        return qm.screen_additive(smiles, reference)
+
     def simulate_conductivity(self, comp, rho=1.20, n_ion=6, ps=1000,
                               seed=0, k_exp=None, tag=None):
         """用分子动力学算电导率 —— 打分器外推不了的体系走这条路。
