@@ -101,26 +101,68 @@ c "合并分卷权重"
 bash scripts/assemble_weights.sh || die "权重合并失败"
 
 # ---------- 3. 底座（可选）----------
-if [ "$WANT_BASE" = 1 ]; then
-  c "下载底座（镜像 $MIRROR，约 60 GB，可中断续传）"
+# 按显存决定下哪些底座：ether0 用于分子生成，Qwen3.8-27B 用于知识问答
+NEED_ETHER0=0; NEED_QWEN=0
+[ "$WANT_BASE" = 1 ] && NEED_ETHER0=1
+[ "$WANT_BASE" = 1 ] && [ "$GPU_MEM" -ge 60000 ] && [ "$FREE_GB" -ge 130 ] && NEED_QWEN=1
+[ "${WITH_QWEN:-0}" = 1 ] && NEED_QWEN=1        # 强制下 Qwen：WITH_QWEN=1 bash deploy.sh
+
+if [ "$NEED_ETHER0" = 1 ] || [ "$NEED_QWEN" = 1 ]; then
   export HF_ENDPOINT="$MIRROR"
   $PY -m pip install $PIPFLAGS $PIPIDX huggingface_hub 2>/dev/null
-  CLEARCHEM_ROOT="$ROOT" $PY - <<'PYDL'
-import os
+  c "下载底座（镜像 $MIRROR，断点续传，中断了重跑同一条命令即可）"
+  CLEARCHEM_ROOT="$ROOT" NEED_ETHER0="$NEED_ETHER0" NEED_QWEN="$NEED_QWEN" $PY - <<'PYDL'
+import os, sys
 from huggingface_hub import snapshot_download
 root = os.environ["CLEARCHEM_ROOT"]
-for repo, sub in [("futurehouse/ether0", "bases/ether0")]:
+jobs = []
+if os.environ.get("NEED_ETHER0") == "1":
+    jobs.append(("futurehouse/ether0", "bases/ether0", "分子生成底座", 48))
+if os.environ.get("NEED_QWEN") == "1":
+    jobs.append(("Qwen/Qwen3.8-27B", "bases/qwen", "知识层底座", 54))
+for repo, sub, desc, gb in jobs:
     tgt = os.path.join(root, sub)
     if os.path.exists(os.path.join(tgt, "config.json")):
-        print("  %s 已存在" % sub); continue
-    try:
-        snapshot_download(repo_id=repo, local_dir=tgt, max_workers=4, resume_download=True)
-        print("  %s 完成" % sub)
-    except Exception as ex:
-        print("  ★ %s 失败：%s" % (repo, str(ex)[:80]))
+        print("  — %s 已存在，跳过" % desc); continue
+    print("  ↓ %s  %s  约 %d GB" % (desc, repo, gb), flush=True)
+    for attempt in (1, 2, 3):
+        try:
+            snapshot_download(repo_id=repo, local_dir=tgt, max_workers=4,
+                              resume_download=True,
+                              ignore_patterns=["*.pth", "*.gguf", "original/*"])
+            print("  ✓ %s 完成" % desc); break
+        except Exception as ex:
+            msg = str(ex)[:90]
+            if attempt == 3:
+                print("  ★ %s 三次失败：%s" % (desc, msg))
+                print("    手动下载后放到 %s，再用 --no-base 重跑" % tgt)
+            else:
+                print("    第 %d 次失败，重试：%s" % (attempt, msg), flush=True)
 PYDL
+
+  # 底座与适配器的兼容性校验：维度对不上说明下错了版本
+  CLEARCHEM_ROOT="$ROOT" $PY - <<'PYMATCH'
+import json, os
+root = os.environ["CLEARCHEM_ROOT"]
+pairs = [("bases/ether0", "models/clearchem-gen", "生成器"),
+         ("bases/qwen", "models/clearchem-qwen", "知识层")]
+for b, a, name in pairs:
+    bc = os.path.join(root, b, "config.json")
+    ac = os.path.join(root, a, "adapter_config.json")
+    if not (os.path.exists(bc) and os.path.exists(ac)):
+        continue
+    cfg = json.load(open(bc))
+    tc = cfg.get("text_config", cfg)
+    acfg = json.load(open(ac))
+    hid = tc.get("hidden_size")
+    layers = tc.get("num_hidden_layers")
+    r = acfg.get("r"); tm = acfg.get("target_modules")
+    print("  ✓ %s 底座 %d层/hidden %s ↔ 适配器 rank %s, %d 个投影层"
+          % (name, layers or -1, hid, r, len(tm or [])))
+PYMATCH
 else
   w "不下载底座 → 分子生成与知识问答不可用；性质预测和配方推荐照常"
+  echo "     需要时：WITH_QWEN=1 bash scripts/deploy.sh"
 fi
 
 # ---------- 4. 配方数据 ----------
@@ -130,6 +172,26 @@ if [ ! -f "$ROOT/data/CALiSol-23.csv" ] && [ "$NET_OK" = 1 ]; then
   rm -rf /tmp/_cal && git clone --depth 1 https://github.com/Pele0599/CALiSol-23.git /tmp/_cal 2>/dev/null \
     && cp "/tmp/_cal/CALiSol-23 Dataset.csv" "$ROOT/data/CALiSol-23.csv" && rm -rf /tmp/_cal \
     && c "  $(wc -l < "$ROOT/data/CALiSol-23.csv") 行" || w "  获取失败，配方层不可用"
+fi
+
+# ---------- 4b. ChemBench 题库（跑分用，可选）----------
+if [ "${WITH_BENCH:-0}" = 1 ] || [ "$NEED_QWEN" = 1 ]; then
+  if [ ! -d "$ROOT/data/chembench_hf" ] && [ "$NET_OK" = 1 ]; then
+    c "下载 ChemBench 题库（2785 题）"
+    export HF_ENDPOINT="$MIRROR"
+    CLEARCHEM_ROOT="$ROOT" $PY - <<'PYBENCH'
+import os
+from huggingface_hub import snapshot_download
+try:
+    snapshot_download(repo_id="jablonkagroup/ChemBench", repo_type="dataset",
+                      local_dir=os.path.join(os.environ["CLEARCHEM_ROOT"], "data/chembench_hf"),
+                      resume_download=True)
+    print("  ✓ 题库完成")
+except Exception as ex:
+    print("  ★ 题库下载失败：%s" % str(ex)[:80])
+PYBENCH
+    $PY -m pip install $PIPFLAGS $PIPIDX chembench 2>/dev/null && c "  官方计分库已装"
+  fi
 fi
 
 # ---------- 5. 配置 ----------

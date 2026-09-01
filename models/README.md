@@ -26,7 +26,7 @@ models/
 
 | 适配器 | 底座 | 大小 |
 |---|---|---|
-| clearchem-qwen | Qwen3.5-27B | ~54 GB |
+| clearchem-qwen | Qwen3.8-27B | ~54 GB |
 | clearchem-gen | ether0 | ~48 GB |
 
 `scripts/deploy.sh` 会自动下载 ether0（走 hf-mirror 镜像）。

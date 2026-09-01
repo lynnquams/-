@@ -19,33 +19,16 @@
 
 ## 一、复现 ChemBench 0.6445
 
-### 1. 准备 Qwen 底座（54 GB）
+### 1. 一条命令准备全部依赖
 
 ```bash
-export HF_ENDPOINT=https://hf-mirror.com
-pip3 install huggingface_hub
-huggingface-cli download Qwen/Qwen3.5-27B-Instruct \
-  --local-dir ~/clearchem/bases/qwen
+cd ~/clearchem && WITH_BENCH=1 WITH_QWEN=1 bash scripts/deploy.sh
 ```
 
-### 2. 准备题库
+自动完成：Qwen3.8-27B 底座（54 GB）· ChemBench 题库（2785 题）· 官方计分库 `chembench`。
+断点续传，中断了重跑同一条命令。
 
-```bash
-export HF_ENDPOINT=https://hf-mirror.com
-python3 - <<'EOF'
-from huggingface_hub import snapshot_download
-snapshot_download(repo_id="jablonkagroup/ChemBench", repo_type="dataset",
-                  local_dir="~/clearchem/data/chembench_hf")
-EOF
-```
-
-目录结构应为 `data/chembench_hf/<category>/train-*.parquet`，共 2,785 题。
-
-### 3. 装官方计分库
-
-```bash
-pip3 install chembench
-```
+脚本还会校验底座与适配器的维度是否匹配——下错版本会当场报错，不会等到跑分时才发现。
 
 **必须用官方 `chembench.metrics.all_correct` 计分**，不要自己写判分逻辑。
 我们自己复现的判分曾因浮点尾数问题使成绩虚高 0.25pp

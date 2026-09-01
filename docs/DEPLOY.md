@@ -145,15 +145,19 @@ for x in r["results"]:
 
 **适用**：显存 ≥ 60 GB（A100 80G / H100 / 双卡 A6000）。
 
-### 额外准备 Qwen3.5-27B 底座
-
-底座约 54 GB，建议手动下载：
+### 一条命令，底座自动下
 
 ```bash
-export HF_ENDPOINT=https://hf-mirror.com
-pip3 install huggingface_hub
-huggingface-cli download Qwen/Qwen3.5-27B-Instruct --local-dir ~/clearchem/bases/qwen
+cd ~/clearchem && WITH_QWEN=1 bash scripts/deploy.sh
 ```
+
+脚本会自动：
+1. 下载 Qwen3.8-27B 底座（54 GB，走镜像，断点续传，失败自动重试 3 次）
+2. 下载 ether0 底座（48 GB）
+3. 下载 ChemBench 题库并装官方计分库
+4. **校验底座与适配器维度是否匹配**（下错版本会当场报出来）
+
+显存 ≥60 GB 且磁盘 ≥130 GB 时会自动触发，不需要 `WITH_QWEN=1`。
 
 ### 加载知识层
 

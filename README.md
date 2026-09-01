@@ -36,7 +36,7 @@ ClearChem 把四类能力收在一个可调用的系统里，围绕**电解液�
 | 2 | claude3.5 | 0.6255 |
 | 3 | claude3.5-react | 0.6248 |
 | 4 | gpt-4o | 0.6108 |
-| — | 裸底座 Qwen3.5-27B | 0.5964 |
+| — | 裸底座 Qwen3.8-27B | 0.5964 |
 
 相对裸底座 **+4.81 个百分点**，配对 McNemar 检验 **p < 1e-4**（翻对 318 题 / 翻错 184 题）。
 
@@ -148,7 +148,7 @@ cc.predict(["CCOC(=O)OC", "C1COC(=O)O1"])
 
               ┌────────────────────────────────────┐
               │  知识层  ClearChem-Qwen             │
-              │  Qwen3.5-27B + LoRA + Python 工具   │
+              │  Qwen3.8-27B + LoRA + Python 工具   │
               │  ChemBench 0.6445                   │
               └────────────────────────────────────┘
 ```
@@ -185,7 +185,7 @@ scripts/            部署与评测脚本
 本项目基于以下开源资源，许可与归属见 [NOTICE](NOTICE)：
 
 - **ether0**（生成器底座）— Apache 2.0
-- **Qwen3.5**（知识层底座）
+- **Qwen3.8-27B**（知识层底座）— Apache 2.0
 - **MolSkill** — MIT，Choung et al., *Nat. Commun.* 2023, [10.1038/s41467-023-42242-1](https://doi.org/10.1038/s41467-023-42242-1)
 - **CALiSol-23** — [10.1038/s41597-024-03575-8](https://doi.org/10.1038/s41597-024-03575-8)
 - **ChemBench** — lamalab-org
