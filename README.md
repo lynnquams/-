@@ -45,6 +45,26 @@ ClearChem 把四类能力收在一个可调用的系统里，围绕**电解液�
 
 ---
 
+## 部署
+
+```bash
+git clone https://gitee.com/lin-fangyue/computing-platform.git ~/clearchem
+cd ~/clearchem && bash scripts/deploy.sh
+```
+
+脚本会自动探测机器条件并**分级降级**——无 GPU 就只装性质预测和配方推荐，
+显存够就加上分子生成，缺什么禁用什么，不会中途失败。部署完会**真实调用每一层做自检**。
+
+逐步操作、三种场景、常见问题见 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
+
+| 机器条件 | 可用能力 | 磁盘 |
+|---|---|---|
+| 无 GPU / 显存 <20GB | 性质预测 · 配方推荐 | ~3 GB |
+| 显存 ≥24GB | + 分子生成 | ~60 GB |
+| 显存 ≥60GB | + 知识问答 | ~120 GB |
+
+---
+
 ## 快速开始
 
 ```python
@@ -144,10 +164,18 @@ clearchem/          集成层与各能力模块
   formulate.py        配方推荐命令行接口
 models/             模型权重（见 models/README.md 的下载与校验说明）
 docs/               技术文档
+  DEPLOY.md           逐步部署指南（三种场景 + 常见问题）
+  REPRODUCE.md        复现指南（跑分需要额外准备什么）
   TECHNICAL.md        方法、训练配方、消融实验
   BENCHMARKS.md       全部实测数据与统计检验
   FAILURES.md         十一条失败路径与两个被证伪的机制假说
-scripts/            训练与评测脚本
+scripts/            部署与评测脚本
+  deploy.sh           一键部署（自动分级降级）
+  assemble_weights.sh 分卷权重合并 + 校验
+  eval_chembench.py   ChemBench 评测（官方计分）
+  eval_condition.py   条件遵循评测
+  mcnemar.py          配对显著性检验
+  quickstart.py       最小示例
 ```
 
 ---
