@@ -1,0 +1,16 @@
+# 核心（任何机器都需要，纯 CPU 可用）
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+rdkit>=2023.9
+torch>=2.0
+
+# 分子生成与知识问答需要（需 GPU）
+transformers>=4.40
+peft>=0.10
+accelerate>=0.28
+safetensors>=0.4
+
+# 可选：MLIP 分子动力学（见 docs/TECHNICAL.md 第 4 节，当前不推荐用于输运性质）
+# mace-torch>=0.3.13
+# ase>=3.22

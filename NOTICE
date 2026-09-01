@@ -1,0 +1,46 @@
+ClearChem
+Copyright 2026
+
+本项目使用了以下第三方资源，其许可与归属如下：
+
+--------------------------------------------------------------------------------
+ether0（分子生成器底座）
+Licensed under the Apache License, Version 2.0
+http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Qwen3.5（知识层底座）
+See the model's original license terms.
+
+--------------------------------------------------------------------------------
+MolSkill（药化偏好数据与方法）
+MIT License, Microsoft Corporation
+https://github.com/microsoft/molskill
+Choung, O-H., Vianello, R., Segler, M., Stiefl, N., Jimenez-Luna, J.
+"Extracting medicinal chemistry intuition via preference machine learning."
+Nature Communications 14, 6651 (2023). https://doi.org/10.1038/s41467-023-42242-1
+
+--------------------------------------------------------------------------------
+CALiSol-23（电解液电导率数据）
+https://github.com/Pele0599/CALiSol-23
+https://doi.org/10.1038/s41597-024-03575-8
+
+--------------------------------------------------------------------------------
+ChemBench（评测基准）
+https://github.com/lamalab-org/chembench
+本项目未在 ChemBench 题库上训练。MolSkill 数据中与基准重合的 1,000 对已逐条剔除，
+脚本中有断言保证零重合。ChemBench 的 canary GUID 在训练语料中零命中。
+
+--------------------------------------------------------------------------------
+PubChem（分子结构与 GHS 危害分类）
+公有领域 / 各数据源许可：
+  HSDB / NLM        美国政府作品，不受版权保护
+  EUR-Lex CLP       EU Decision 2011/833/EU，商用非商用均可重用
+  ECHA              署名即可重用（Source: European Chemicals Agency, http://echa.europa.eu/）
+
+--------------------------------------------------------------------------------
+RDKit
+BSD 3-Clause License
+
+MACE / MACE-OMol
+https://github.com/ACEsuit/mace

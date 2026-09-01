@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+bases/
+data/*.csv
+clearchem/config.json
+*.log
+# 合并产物不入库，仓库只存 models/_parts 的分卷
+models/clearchem-qwen/adapter_model.safetensors
+models/clearchem-gen/adapter_model.safetensors
+models/clearchem-gen/cond_encoder.pt
