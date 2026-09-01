@@ -34,7 +34,7 @@ fi
 PY="${PYTHON:-python3}"
 MODE="${1:-full}"
 MIRROR="${HF_ENDPOINT:-https://hf-mirror.com}"
-REPO="https://gitee.com/lin-fangyue/computing-platform.git"
+REPO="https://github.com/lynnquams/-.git"
 
 c() { printf '\033[1;36m[deploy]\033[0m %s\n' "$*"; }
 w() { printf '\033[1;33m[跳过]\033[0m %s\n' "$*"; }
@@ -77,7 +77,7 @@ c "  安装目录 $ROOT（可用 ${FREE_GB} GB）"
 
 # 网络探测：决定用不用镜像、能不能下底座
 NET_OK=0
-for u in "$MIRROR" "https://gitee.com"; do
+for u in "$MIRROR" "https://github.com" "https://gitee.com"; do
   if curl -sf -m 8 -o /dev/null "$u" 2>/dev/null; then NET_OK=1; break; fi
 done
 [ "$NET_OK" = 1 ] && c "  外网可达" || w "  外网不可达，只能用本地已有资源"

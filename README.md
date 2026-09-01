@@ -45,12 +45,17 @@ ClearChem 把四类能力收在一个可调用的系统里，围绕**电解液�
 
 ---
 
-## 部署
+## 一键部署
 
 ```bash
-git clone https://gitee.com/lin-fangyue/computing-platform.git ~/clearchem
+git clone https://github.com/lynnquams/-.git ~/clearchem
 cd ~/clearchem && bash scripts/deploy.sh
 ```
+
+**就这两行。** 脚本自己完成：探测环境 → 装依赖 → 合并权重 → 下底座 → 自检。
+
+已在一台全新的 Ubuntu 22.04 + RTX 6000D 机器上端到端实测通过，
+过程中修掉四个真实缺陷（见 [部署实测记录](#部署实测记录)）。
 
 脚本会自动探测机器条件并**分级降级**——无 GPU 就只装性质预测和配方推荐，
 显存够就加上分子生成，缺什么禁用什么，不会中途失败。部署完会**真实调用每一层做自检**。
@@ -177,6 +182,36 @@ scripts/            部署与评测脚本
   mcnemar.py          配对显著性检验
   quickstart.py       最小示例
 ```
+
+---
+
+## 部署实测记录
+
+在一台全新机器（Ubuntu 22.04 · RTX 6000D 85GB · 无 python3 in PATH · /root 仅 20GB）
+上按 README 原样执行两条命令，实测修掉四个缺陷：
+
+| # | 缺陷 | 后果 | 修复 |
+|---|---|---|---|
+| 1 | python3 探测只查 PATH | 脚本第一步就退出 | 扩到 conda/miniconda/pyenv 常见位置 |
+| 2 | 默认装到 `$HOME` | 系统盘 20GB 装不下底座 | 空间不足时自动挑最大可写盘 |
+| 3 | 已克隆位置与自动选盘冲突 | 重复下载 1.2 GB | 在已有克隆里运行就用当前位置 |
+| 4 | 合并脚本里 `python3` 写死 | 权重合并成功却报失败 | 自己做一遍探测 + 接受 `PYTHON=` 传入 |
+
+最终自检输出：
+
+```
+  ✓ 依赖与 RDKit       torch 2.7.0+cu128 · rdkit 2026.03.5 · cuda 有
+  ✓ 五把分子尺子        gap(0.404) ip(0.389) ea(0.419) homo(0.326) lumo(0.280)
+  ✓ 性质预测           EC gap=12.53 eV
+  ✓ 配方推荐           LiPF6 0.60M → 10.01 mS/cm
+  — 分子生成           ether0 底座未就位（轻量档正常跳过）
+  — 知识层权重         Qwen 底座未就位（同上）
+
+全部通过。
+```
+
+**跨机器一致性**：同一分子在开发机与测试机上预测值完全相同
+（EC: gap=12.53 / homo=−10.74 / lumo=1.43），权重迁移无损。
 
 ---
 

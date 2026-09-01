@@ -41,7 +41,7 @@ sudo yum install -y git python3 python3-pip
 ### 第 2 步 · 克隆仓库
 
 ```bash
-git clone https://gitee.com/lin-fangyue/computing-platform.git ~/clearchem
+git clone https://github.com/lynnquams/-.git ~/clearchem
 cd ~/clearchem
 ```
 
