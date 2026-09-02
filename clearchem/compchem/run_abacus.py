@@ -129,7 +129,11 @@ def run(input_text, stru_text, kpt_text=None, workdir=None,
 
     logs = list(w.glob("OUT*/running_*.log"))
     log = logs[0].read_text(errors="ignore") if logs else ""
-    m = re.search(r"!FINAL_ETOT_IS\s+([-\d.eE+]+)", log)
+    # ABACUS 不同版本的总能标记不一样：v3.10.1 在 westc 上输出 !FINAL_ETOT_IS，
+    # 在 super-server 上输出小写的 "final etot is"。只认一种会把跑对的判成失败 ——
+    # 实测 24 个钙钛矿任务全部算出了能量却被记成失败。
+    m = (re.search(r"!FINAL_ETOT_IS\s+([-\d.eE+]+)", log)
+         or re.search(r"final etot is\s+([-\d.eE+]+)", log, re.I))
     warn = (w / "OUT.autotest" / "warning.log")
     warns = warn.read_text(errors="ignore").strip() if warn.exists() else ""
 

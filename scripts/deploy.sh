@@ -118,7 +118,11 @@ PYCHK
 # 若脚本本身就在一份克隆里运行（用户按 README 先 clone 再跑），直接用这一份，
 # 不要因为"数据盘更大"就再克隆一遍（那会重复下载 1.2 GB）。
 _SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -d "$_SELF_DIR/.git" ] && [ -f "$_SELF_DIR/scripts/deploy.sh" ]; then
+# 判据只看"是不是一份完整的仓库内容"，不看 .git。
+# 用户可能是解压 tar、rsync、或从别处拷过来的，那些都没有 .git ——
+# 原来只认 .git，结果走到克隆分支、撞上"目标目录非空"直接失败。
+if [ -f "$_SELF_DIR/scripts/deploy.sh" ] && [ -d "$_SELF_DIR/clearchem" ] \
+   && [ -d "$_SELF_DIR/models" ]; then
   if [ "$ROOT" != "$_SELF_DIR" ]; then
     _self_gb=$(df -Pk "$_SELF_DIR" 2>/dev/null|tail -1|awk '{print int($4/1048576)}')
     _self_gb=${_self_gb:-0}
@@ -133,10 +137,13 @@ if [ -d "$_SELF_DIR/.git" ] && [ -f "$_SELF_DIR/scripts/deploy.sh" ]; then
     FREE_GB=$_self_gb
   fi
   c "使用当前克隆 $ROOT（可用 ${FREE_GB} GB）"
-  git -C "$ROOT" pull --ff-only -q 2>/dev/null || true
+  [ -d "$ROOT/.git" ] && git -C "$ROOT" pull --ff-only -q 2>/dev/null || true
 elif [ ! -d "$ROOT/.git" ]; then
   [ "$NET_OK" = 0 ] && die "无网且 $ROOT 不存在，请先手动放置仓库"
   c "克隆仓库 → $ROOT"
+  if [ -d "$ROOT" ] && [ -n "$(ls -A "$ROOT" 2>/dev/null)" ]; then
+    die "$ROOT 已存在且非空，但里面不是完整的仓库。请清空它，或把完整仓库放进去后重跑。"
+  fi
   git clone "$REPO" "$ROOT" || die "克隆失败"
 else
   c "仓库已存在 $ROOT，尝试更新"

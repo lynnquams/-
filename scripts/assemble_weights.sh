@@ -27,6 +27,7 @@ P=models/_parts
 
 declare -a TARGETS=(
   "clearchem-qwen/adapter_model.safetensors"
+  "clearchem-qwen-dpo/adapter_model.safetensors"
   "clearchem-gen/adapter_model.safetensors"
   "clearchem-gen/cond_encoder.pt"
 )
@@ -52,6 +53,7 @@ if [ "$PY" != ":" ]; then
 import json, struct, sys, os
 bad = []
 for f in ["models/clearchem-qwen/adapter_model.safetensors",
+          "models/clearchem-qwen-dpo/adapter_model.safetensors",
           "models/clearchem-gen/adapter_model.safetensors"]:
     with open(f, "rb") as fh:
         n = struct.unpack("<Q", fh.read(8))[0]
