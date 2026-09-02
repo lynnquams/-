@@ -77,8 +77,19 @@ def main():
     elif cmd == "design":
         kw = dict(a.split("=", 1) for a in args if "=" in a)
         n = int(kw.pop("n", 10))
-        show(call("design_molecule", {"targets": {k: float(v) for k, v in kw.items()},
-                                      "n": n}))
+        tg = {k: float(v) for k, v in kw.items()}
+        r = call("design_molecule", {"targets": tg, "n": n})
+        res = r.get("results", [])
+        print("目标 %s   生成 %s 个，唯一 %s 个"
+              % (tg, r.get("n_generated"), r.get("n_unique")))
+        for x in res[:n]:
+            pr = x.get("predicted", {})
+            dev = "  ".join("%s %.3f（偏差 %+.3f）" % (k, v, v - tg.get(k, v))
+                            for k, v in pr.items())
+            print("  %-34s %s  SA %.2f" % (x["smiles"][:34], dev, x.get("sa", 0)))
+        for k, v in (r.get("scorer_trust") or {}).items():
+            print("  尺子 %s：%s，MAE %.3f，Spearman %.3f" % (k, v[0], v[1], v[2]))
+        print("  caveat: %s" % r.get("caveat", ""))
     elif cmd == "ask":
         r = call("ask", {"question": " ".join(args),
                          "tool": os.environ.get("TOOL", "0") == "1"})

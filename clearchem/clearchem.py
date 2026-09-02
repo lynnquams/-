@@ -122,8 +122,13 @@ class ClearChem:
         if tok.pad_token is None:
             tok.pad_token = tok.eos_token
         tok.padding_side = "left"
-        base = AutoModelForCausalLM.from_pretrained(SNAP, device_map={"": 0},
-                                                    trust_remote_code=True)
+        # 必须显式指定 bf16：ether0 的 config.json 里 torch_dtype 写的是 float32，
+        # 不指定就按 fp32 加载，24B 要 88 GB —— 85 GB 的卡直接 OOM，
+        # 而且和知识层（27B bf16，54 GB）根本不可能同时驻留。
+        # bf16 之后生成器约 44 GB，两个模型仍不能同时在一张卡上，
+        # 所以 knowledge.py 和这里都做懒加载，谁用谁载。
+        base = AutoModelForCausalLM.from_pretrained(
+            SNAP, device_map={"": 0}, dtype=torch.bfloat16, trust_remote_code=True)
         model = PeftModel.from_pretrained(base, ADP); model.eval()
         hid = model.get_input_embeddings().weight.shape[1]
 

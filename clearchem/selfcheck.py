@@ -7,6 +7,7 @@ import json, os, sys, time
 
 OK, FAIL, SKIP = "\033[1;32m✓\033[0m", "\033[1;31m✗\033[0m", "\033[1;33m—\033[0m"
 _fails = []
+_skipped = []
 
 
 def check(name, fn, required=True):
@@ -17,6 +18,8 @@ def check(name, fn, required=True):
         return True
     except Exception as e:
         mark = FAIL if required else SKIP
+        if not required:
+            _skipped.append((name, str(e)))
         print("  %s %-30s %s" % (mark, name, str(e)[:70]))
         if required:
             _fails.append(name)
@@ -125,8 +128,13 @@ def main():
         from clearchem.knowledge import ChemQwen
         q = ChemQwen()
         a = q.ask("What is the chemical formula of water?")
-        assert a and len(a) < 200, "回答异常：%r" % a[:60]
-        return "问答可用：%s" % a[:40].replace("\n", " ")
+        # 判内容，不判长度。这个模型会先写结论再补解释，
+        # 原来的 len(a) < 200 会把正确答案判成「回答异常」——
+        # 实测它答的是 "The chemical formula of water is **$H_2O$**." 加一段说明。
+        assert a, "没有输出"
+        norm = a.replace("$", "").replace("_", "").replace("{", "").replace("}", "")
+        assert "H2O" in norm.replace(" ", ""), "答案里没有 H2O：%r" % a[:80]
+        return "问答可用：%s" % a[:46].replace("\n", " ")
     check("知识层推理", qwen_infer, required=False)
 
     def mlip():
@@ -152,6 +160,20 @@ def main():
         assert "最小原子间距" in r.stdout, "MD 未跑到建盒：%s" % (r.stderr[-200:] or r.stdout[-200:])
         return "MD 可运行（20 步冒烟）"
     check("分子动力学运行", mlip_run, required=False)
+
+    # 可选项失败分两种：底座没装（真的可跳过）和显存不足/加载失败（是问题）。
+    # 之前一律算「可选跳过」，结果 CUDA OOM 也报「全部通过」——
+    # 用户拿到一个自检全绿但生成器和知识层都用不了的环境。
+    _hard = [n for n, m in _skipped
+             if any(k in m for k in ("out of memory", "OutOfMemory", "CUDA error",
+                                     "No such file", "Error no file"))]
+    if _hard:
+        print()
+        print("\033[1;31m以下可选项不是没安装，是装了但用不了：\033[0m")
+        for n in _hard:
+            print("  x %s" % n)
+        print("  显存不足时：一张卡装不下两个大模型（生成器 bf16 约 44 GB +")
+        print("  知识层 54 GB），二者已做懒加载、谁用谁载，不要同时调。")
 
     print()
     if _fails:

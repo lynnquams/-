@@ -169,7 +169,7 @@ if [ "$NEED_ETHER0" = 1 ] || [ "$NEED_QWEN" = 1 ]; then
   # hf-mirror 的 Xet 存储后端会报 "CAS Client Error"，三次重试全挂。关掉它走普通 HTTP。
   export HF_HUB_DISABLE_XET=1
   CLEARCHEM_ROOT="$ROOT" NEED_ETHER0="$NEED_ETHER0" NEED_QWEN="$NEED_QWEN" $PY - <<'PYDL'
-import os, sys, glob
+import json, os, sys, glob
 from huggingface_hub import snapshot_download
 root = os.environ["CLEARCHEM_ROOT"]
 jobs = []
@@ -181,24 +181,53 @@ for repo, sub, desc, gb in jobs:
     tgt = os.path.join(root, sub)
     # 只看 config.json 会误判：它几 KB 先下完，权重还差几十 GB 就被当成"已存在"。
     # 实测 qwen 只下了 3.4 MB 却报"已存在，跳过"，然后自检说"全部通过"。
-    have = sum(os.path.getsize(f) for f in
-               glob.glob(os.path.join(tgt, "**", "*"), recursive=True)
-               if os.path.isfile(f)) / 1073741824
-    if os.path.exists(os.path.join(tgt, "config.json")) and have > gb * 0.9:
-        print("  — %s 已完整（%.1f GB），跳过" % (desc, have)); continue
+    # 完整性判据经历了三版，前两版都会漏判：
+    #   v1 只看 config.json 存在 —— 下了 3.4 MB 就报"已存在"
+    #   v2 按体积比预期 —— 把 .cache 里的 .incomplete 也算进去了，
+    #      而且我写的预期值本身就错（ether0 标 48 GB，实际 75.2 GB），
+    #      按 48×0.9 判，下到 44 GB 就算"完整"，实际还差 30 GB
+    # v3 按仓库自己的 index.json 声明的分片清单判：它说要哪些文件就查哪些。
+    def _size(d):
+        n = 0
+        for f in glob.glob(os.path.join(d, "**", "*"), recursive=True):
+            if os.path.isfile(f) and ".cache" not in f and not f.endswith(".incomplete"):
+                n += os.path.getsize(f)
+        return n / 1073741824
+
+    def _complete(d):
+        """索引在就按索引查分片；没有索引才退回体积判据。"""
+        idx = os.path.join(d, "model.safetensors.index.json")
+        if os.path.exists(idx):
+            try:
+                want = set(json.load(open(idx))["weight_map"].values())
+            except Exception:
+                return None, 0
+            missing = [w for w in want
+                       if not os.path.exists(os.path.join(d, w))]
+            return not missing, len(want) - len(missing)
+        if os.path.exists(os.path.join(d, "config.json")) and \
+           glob.glob(os.path.join(d, "*.safetensors")):
+            return _size(d) > gb * 0.9, 0
+        return None, 0
+
+    have = _size(tgt)
+    done_flag, nshard = _complete(tgt)
+    if done_flag:
+        print("  — %s 已完整（%.1f GB，%d 个分片齐）跳过" % (desc, have, nshard))
+        continue
     if have > 0.1:
-        print("  ↻ %s 已有 %.1f/%d GB，续传" % (desc, have, gb), flush=True)
+        print("  ↻ %s 已有 %.1f GB，续传" % (desc, have), flush=True)
     print("  ↓ %s  %s  约 %d GB" % (desc, repo, gb), flush=True)
     for attempt in (1, 2, 3):
         try:
             snapshot_download(repo_id=repo, local_dir=tgt, max_workers=4,
                               ignore_patterns=["*.pth", "*.gguf", "original/*"])
-            got = sum(os.path.getsize(f) for f in
-                      glob.glob(os.path.join(tgt, "**", "*"), recursive=True)
-                      if os.path.isfile(f)) / 1073741824
-            if got < gb * 0.9:
-                raise RuntimeError("只下到 %.1f/%d GB，不完整" % (got, gb))
-            print("  ✓ %s 完成（%.1f GB）" % (desc, got)); break
+            ok_, ns_ = _complete(tgt)
+            got = _size(tgt)
+            if ok_ is False:
+                raise RuntimeError("分片不齐（已下 %.1f GB），不完整" % got)
+            print("  ✓ %s 完成（%.1f GB%s）"
+                  % (desc, got, "，%d 个分片" % ns_ if ns_ else "")); break
         except Exception as ex:
             msg = str(ex)[:90]
             if attempt == 3:
