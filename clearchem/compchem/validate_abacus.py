@@ -4,9 +4,14 @@
 改脚手架的增益是改权重的 3~4 倍。Purdue 的 LAMMPS 研究里，
 把校验做成模型边写边调用的 skill，从裸生成 46% 提到 5/6 全对。
 
-规则的取舍原则：只写证据站得住的。
-曾观察到 16 个未收敛样本里前 5 个都没设 mixing，
-但 Fisher 精确检验 p=0.379（失败率 7.7% vs 4.5%）—— 样本太少，不成规则，没写进来。
+规则的取舍原则：**合法性来自官方文档与源码，典型性才来自语料**。
+这两者当初被我混为一谈，结果是：
+  · smearing_method 只认 gaussian，把 ABACUS 同样接受的 gauss 判成非法
+  · mixing_beta 范围写成 0.3~0.4，而官方默认就是 0.8（nspin=1 时）
+两处都是拿 282 条有偏样本当成了全集。用 AbacusCopilot 生成的输入交叉验证时暴露的。
+
+另一条被否掉的规则：16 个未收敛样本里前 5 个都没设 mixing，看着像规律，
+但 Fisher 精确检验 p=0.379（失败率 7.7% vs 4.5%）—— 样本太少，不成规则。
 """
 import re
 
@@ -15,19 +20,23 @@ REQUIRED = ["calculation", "basis_type", "ecutwfc", "scf_thr", "scf_nmax",
             "smearing_method", "smearing_sigma"]
 
 # 实测取值范围（min, max, 中位）。越界不一定错，但要提示。
+# 取值范围：下限来自物理合理性，上限放宽到官方文档允许的区间。
+# 越界只给警告，不判错 —— 合法与否由文档定，语料只说明什么常见。
 RANGES = {
-    "ecutwfc":        (30, 120, 60),      # Ry
-    "scf_thr":        (1e-7, 1e-5, 1e-7),
-    "scf_nmax":       (60, 200, 100),
-    "smearing_sigma": (0.005, 0.1, 0.015),  # Ry
-    "mixing_beta":    (0.3, 0.4, 0.4),
+    "ecutwfc":        (20, 200, 50),        # Ry，官方默认 50(pw)/100(lcao)
+    "scf_thr":        (1e-10, 1e-4, 1e-7),  # 官方默认 1e-9(pw)/1e-7(lcao)
+    "scf_nmax":       (20, 500, 100),
+    "smearing_sigma": (0.001, 0.5, 0.015),  # Ry
+    "mixing_beta":    (0.0, 1.0, 0.8),      # 官方默认 0.8(nspin=1)、0.4(nspin=2/4)
 }
 
 ENUMS = {
     "calculation":     {"scf", "nscf", "relax", "cell-relax", "md", "get_wf",
                         "get_S", "gen_bessel", "get_pchg", "test_neighbour"},
     "basis_type":      {"pw", "lcao", "lcao_in_pw"},
-    "smearing_method": {"gaussian", "fixed", "mp", "mv", "fd"},
+    # 源码 occupy.cpp 与官方文档：gauss 与 gaussian 等价，mv 与 cold 等价
+    "smearing_method": {"gauss", "gaussian", "fixed", "mp", "mp2", "mp3",
+                        "methfessel-paxton", "mv", "cold", "fd"},
     "mixing_type":     {"broyden", "pulay", "plain"},
 }
 
@@ -129,7 +138,27 @@ ks_solver                dav_subspace
     # 非法枚举值
     r = validate(good.replace("smearing_method          gaussian", "smearing_method          bogus"))
     assert not r["ok"], r
-    print("校验器自检全部通过")
+
+    # 回归：AbacusCopilot 实际生成的输入必须无错无警
+    # 这两条曾被误判 —— gauss 判成非法、mixing_beta=0.8 判成越界
+    ac = """INPUT_PARAMETERS
+calculation          scf
+symmetry             1
+kspacing             0.14
+ecutwfc              100
+basis_type           lcao
+ks_solver            genelpa
+smearing_method      gauss
+smearing_sigma       0.01
+mixing_type          broyden
+mixing_beta          0.8
+scf_nmax             100
+scf_thr              1e-07
+"""
+    r = validate(ac)
+    assert r["ok"], "AbacusCopilot 的输出被误判为错误: %s" % r["errors"]
+    assert not r["warnings"], "AbacusCopilot 的输出被误警告: %s" % r["warnings"]
+    print("校验器自检全部通过（含 AbacusCopilot 输出回归）")
 
 
 if __name__ == "__main__":
