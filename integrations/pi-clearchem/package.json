@@ -1,0 +1,8 @@
+{
+  "name": "pi-clearchem",
+  "version": "1.0.0",
+  "description": "ClearChem 电解液计算平台接入 pi",
+  "type": "module",
+  "main": "index.ts",
+  "pi": { "extensions": ["index.ts"] }
+}

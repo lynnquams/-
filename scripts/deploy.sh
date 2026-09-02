@@ -166,8 +166,10 @@ if [ "$NEED_ETHER0" = 1 ] || [ "$NEED_QWEN" = 1 ]; then
   export HF_ENDPOINT="$MIRROR"
   $PY -m pip install $PIPFLAGS $PIPIDX huggingface_hub 2>/dev/null
   c "下载底座（镜像 $MIRROR，断点续传，中断了重跑同一条命令即可）"
+  # hf-mirror 的 Xet 存储后端会报 "CAS Client Error"，三次重试全挂。关掉它走普通 HTTP。
+  export HF_HUB_DISABLE_XET=1
   CLEARCHEM_ROOT="$ROOT" NEED_ETHER0="$NEED_ETHER0" NEED_QWEN="$NEED_QWEN" $PY - <<'PYDL'
-import os, sys
+import os, sys, glob
 from huggingface_hub import snapshot_download
 root = os.environ["CLEARCHEM_ROOT"]
 jobs = []
@@ -177,20 +179,35 @@ if os.environ.get("NEED_QWEN") == "1":
     jobs.append(("Qwen/Qwen3.8-27B", "bases/qwen", "知识层底座", 54))
 for repo, sub, desc, gb in jobs:
     tgt = os.path.join(root, sub)
-    if os.path.exists(os.path.join(tgt, "config.json")):
-        print("  — %s 已存在，跳过" % desc); continue
+    # 只看 config.json 会误判：它几 KB 先下完，权重还差几十 GB 就被当成"已存在"。
+    # 实测 qwen 只下了 3.4 MB 却报"已存在，跳过"，然后自检说"全部通过"。
+    have = sum(os.path.getsize(f) for f in
+               glob.glob(os.path.join(tgt, "**", "*"), recursive=True)
+               if os.path.isfile(f)) / 1073741824
+    if os.path.exists(os.path.join(tgt, "config.json")) and have > gb * 0.9:
+        print("  — %s 已完整（%.1f GB），跳过" % (desc, have)); continue
+    if have > 0.1:
+        print("  ↻ %s 已有 %.1f/%d GB，续传" % (desc, have, gb), flush=True)
     print("  ↓ %s  %s  约 %d GB" % (desc, repo, gb), flush=True)
     for attempt in (1, 2, 3):
         try:
             snapshot_download(repo_id=repo, local_dir=tgt, max_workers=4,
-                              resume_download=True,
                               ignore_patterns=["*.pth", "*.gguf", "original/*"])
-            print("  ✓ %s 完成" % desc); break
+            got = sum(os.path.getsize(f) for f in
+                      glob.glob(os.path.join(tgt, "**", "*"), recursive=True)
+                      if os.path.isfile(f)) / 1073741824
+            if got < gb * 0.9:
+                raise RuntimeError("只下到 %.1f/%d GB，不完整" % (got, gb))
+            print("  ✓ %s 完成（%.1f GB）" % (desc, got)); break
         except Exception as ex:
             msg = str(ex)[:90]
             if attempt == 3:
                 print("  ★ %s 三次失败：%s" % (desc, msg))
                 print("    手动下载后放到 %s，再用 --no-base 重跑" % tgt)
+                # 写个失败标记：底座没下成不能报"部署完成"，
+                # 否则用户拿到一个自检全绿但知识层用不了的环境。
+                open(os.path.join(root, ".base_download_failed"), "a").write(
+                    "%s %s\n" % (desc, msg))
             else:
                 print("    第 %d 次失败，重试：%s" % (attempt, msg), flush=True)
 PYDL
@@ -272,6 +289,15 @@ if [ "$MODE" != "--skip-check" ]; then
 fi
 
 echo
+if [ -f "$ROOT/.base_download_failed" ]; then
+  echo
+  w "底座下载失败，知识层与分子生成不可用："
+  sed 's/^/     /' "$ROOT/.base_download_failed"
+  echo "     其余功能（性质预测/配方推荐/xTB/分子动力学）照常可用。"
+  echo "     重试：HF_HUB_DISABLE_XET=1 bash scripts/deploy.sh"
+  echo "     或换源：HF_ENDPOINT=https://hf-mirror.com bash scripts/deploy.sh"
+  rm -f "$ROOT/.base_download_failed"
+fi
 c "部署完成 → $ROOT"
 echo
 echo "    cd $ROOT && $PY"

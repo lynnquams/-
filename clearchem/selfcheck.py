@@ -100,14 +100,23 @@ def main():
     def qwen():
         base = cfg.get("bases", {}).get("qwen", os.path.join(root, "bases/qwen"))
         assert os.path.exists(os.path.join(base, "config.json")), "Qwen 底座未就位"
+        # 只查 config.json 会误判：它几 KB 先下完，权重差几十 GB 也算"就位"。
+        # 实测底座只下了 3.4 MB，本项照样报 ✓，而下一项推理才炸出
+        # "no file named model.safetensors"。
+        import glob as _g
+        wts = _g.glob(os.path.join(base, "*.safetensors")) + \
+              _g.glob(os.path.join(base, "*.bin"))
+        assert wts, "底座只有配置文件，权重没下（重跑 deploy.sh 续传）"
+        _gb = sum(os.path.getsize(f) for f in wts) / 1073741824
+        assert _gb > 40, "底座权重只有 %.1f GB，不完整（应约 54 GB）" % _gb
         adp = cfg.get("adapters", {}).get("qwen", os.path.join(root, "models/clearchem-qwen"))
         assert os.path.exists(os.path.join(adp, "adapter_model.safetensors")), "适配器缺失"
         # 维度校验：底座与适配器对不上说明下错了版本
         bc = json.load(open(os.path.join(base, "config.json")))
         tc = bc.get("text_config", bc)
         ac = json.load(open(os.path.join(adp, "adapter_config.json")))
-        return "底座 %d层/hidden %s ↔ 适配器 rank %s" % (
-            tc.get("num_hidden_layers", -1), tc.get("hidden_size"), ac.get("r"))
+        return "底座 %.0f GB · %d层/hidden %s ↔ 适配器 rank %s" % (
+            _gb, tc.get("num_hidden_layers", -1), tc.get("hidden_size"), ac.get("r"))
     check("知识层权重", qwen, required=False)
 
     # 7. 知识层真实推理（需 54GB 底座 + 足够显存，可选）
