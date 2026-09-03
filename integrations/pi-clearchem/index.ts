@@ -46,6 +46,27 @@ async function api(path: string, payload?: unknown, signal?: AbortSignal) {
 }
 
 export default function (pi: ExtensionAPI) {
+  // 把 ChemQwen 注册成 pi 的对话模型，整条链就全是自己的东西了：
+  //     pi ──▶ ChemQwen（对话 + 工具决策） ──▶ ClearChem 九个工具
+  // 它的工具调用能力实测完好：算 LUMO 会调 orbitals、说"生成分子"会调
+  // design_molecule、问水的分子式则直接答不乱调。化学微调没削弱通用能力。
+  // 前提是远端起了 OpenAI 兼容接口并做了端口转发（见 scripts/openai_api.py）。
+  pi.registerProvider("clearchem", {
+    name: "ClearChem (ChemQwen)",
+    baseUrl: process.env.CHEMQWEN_URL ?? "http://localhost:8901/v1",
+    apiKey: "local",            // 本地接口不校验，占位即可
+    api: "openai-completions",
+    models: [{
+      id: "qwen-chem",
+      name: "ChemQwen 27B 化学特调",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 32768,
+      maxTokens: 4096,
+    }],
+  });
+
   pi.registerTool({
     name: "clearchem_route",
     label: "该用哪个工具",
