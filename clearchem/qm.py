@@ -21,6 +21,37 @@ HARTREE_EV = 27.211386245988
 BOHR_PER_ANGSTROM = 1.8897259886
 
 
+# 电解液类分子的子结构：碳酸酯、砜、腈、醚、磷酸酯。
+# 尺子在这些分子上电化学排序只有 2/6（随机是 3/6），且把 VC/FEC 判成
+# 比 EC 更难还原 —— 与它们做成膜添加剂的机理完全相反。
+# 光在文档里写"别用"不够：predict() 照算不误，调用方不看文档就会拿到反的结论。
+_ELECTROLYTE_SMARTS = [
+    # 环状碳酸酯用通配的环键，不能写死饱和环：
+    # 第一版写 "O=C1OCCO1"，VC（O=C1OC=CO1）环上是双键，直接漏掉 ——
+    # 而 VC 正是尺子判反的那个分子，也是最经典的成膜添加剂。
+    ("环状碳酸酯", "[#8]=[#6]1[#8][#6][#6][#8]1"),
+    ("链状碳酸酯", "[#6][#8][#6](=[#8])[#8][#6]"),
+    ("砜/亚砜",   "[#16X4](=O)(=O)"),
+    ("腈",       "[CX2]#[NX1]"),
+    ("醚",       "[OD2]([#6])[#6]"),
+    ("磷酸酯",    "[PX4](=O)(O)(O)O"),
+]
+_ELEC_PATTS = None
+
+
+def _electrolyte_like(smi):
+    """返回命中的电解液子结构名，没命中返回 None。"""
+    global _ELEC_PATTS
+    if _ELEC_PATTS is None:
+        _ELEC_PATTS = [(n, Chem.MolFromSmarts(q)) for n, q in _ELECTROLYTE_SMARTS]
+    m = Chem.MolFromSmiles(smi)
+    if m is None or m.GetNumHeavyAtoms() > 30:
+        return None
+    for name, patt in _ELEC_PATTS:
+        if patt is not None and m.HasSubstructMatch(patt):
+            return name
+    return None
+
 def _geometry(smi, seed=0xf00d):
     """RDKit ETKDG + MMFF。手写坐标是 MD 前三版全部失败的根源，这里不重蹈。"""
     m = Chem.MolFromSmiles(smi)

@@ -8,6 +8,7 @@
     export CLEARCHEM_URL=http://localhost:8900
 
 用法
+    clearchem_cli.py route "帮我设计几个新溶剂"    # 先问该走哪条
     clearchem_cli.py health
     clearchem_cli.py caps
     clearchem_cli.py orbitals "C1COC(=O)O1" "O=C1OC=CO1"
@@ -48,7 +49,13 @@ def main():
         print(__doc__); return
     cmd, args = sys.argv[1], sys.argv[2:]
 
-    if cmd == "health":
+    if cmd == "route":
+        r = call("route", {"text": " ".join(args)})
+        print("→ %s（%s）%s" % (r["method"], r["backend"],
+                               "  需载大模型 %d GB" % r["vram_gb"]
+                               if r["needs_big_model"] else ""))
+        print("   %s" % r["reason"])
+    elif cmd == "health":
         show(call("health"))
     elif cmd in ("caps", "capabilities"):
         for k, v in call("capabilities").items():

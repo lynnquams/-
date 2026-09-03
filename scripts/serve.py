@@ -64,6 +64,11 @@ class Additive(BaseModel):
     smiles: List[str]
     reference: str = "C1COC(=O)O1"
 
+class Route(BaseModel):
+    text: str
+    smiles: Optional[List[str]] = None
+
+
 class Ask(BaseModel):
     question: str
     tool: bool = False
@@ -101,6 +106,18 @@ def capabilities():
         "ask": {"desc": "ChemQwen 化学问答",
                 "caveat": "ChemBench 0.6445（接 Python 工具）/ 0.6316（纯模型）"},
     }
+
+
+@app.post("/route")
+def route_(r: Route):
+    """判断一句话该走哪个模型/引擎。agent 拿不准时先问这里。
+
+    存在的理由：选错模型不会报错，只会给一个看着正常的错答案。
+    实测三例：VC 的 LUMO 走尺子排序是反的；「生成一个分子」走 ChemQwen
+    会得到设计思路而不是分子；单次 MD 比较两个配方排序会翻转。
+    """
+    from clearchem.router import route
+    return route(r.text, r.smiles)
 
 
 @app.post("/predict")

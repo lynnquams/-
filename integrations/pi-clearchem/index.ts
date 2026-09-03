@@ -47,6 +47,33 @@ async function api(path: string, payload?: unknown, signal?: AbortSignal) {
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
+    name: "clearchem_route",
+    label: "该用哪个工具",
+    description:
+      "把用户的一句话交给它，返回该调哪个工具、走哪个模型、要不要载大模型。" +
+      "拿不准该用 clearchem_predict 还是 clearchem_orbitals、" +
+      "该用 clearchem_ask 还是 clearchem_design_molecule 时，先问它。" +
+      "存在的理由：选错模型不会报错，只会给一个看起来正常的错答案。" +
+      "实测三例：VC 的 LUMO 走尺子排序是反的；「设计一个新的电解液溶剂」" +
+      "若走 ChemQwen 会得到一段设计思路而不是分子；" +
+      "单次分子动力学比较两个配方，换个种子排序就翻转。",
+    promptSnippet: "判断这句话该走哪个 ClearChem 工具",
+    promptGuidelines: [
+      "用户提到生成/设计分子时，必须走 clearchem_design_molecule，不要用 clearchem_ask。",
+      "电解液分子（碳酸酯/醚/砜/腈）问性质，走 clearchem_orbitals，不要用 clearchem_predict。",
+    ],
+    parameters: Type.Object({
+      text: Type.String({ description: "用户的原话" }),
+      smiles: Type.Optional(Type.Array(Type.String(),
+        { description: "涉及的分子 SMILES，有的话一并给" })),
+    }),
+    async execute(_id, params, signal) {
+      return textResult(
+        await api("route", { text: params.text, smiles: params.smiles ?? null }, signal));
+    },
+  });
+
+  pi.registerTool({
     name: "clearchem_health",
     label: "查服务",
     description:

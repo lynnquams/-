@@ -80,6 +80,10 @@ def _feat_raw(s):
     return fp, np.nan_to_num(d, nan=0., posinf=0., neginf=0.)
 
 
+
+from .qm import _electrolyte_like  # noqa: E402
+
+
 class ClearChem:
     def __init__(self, device="cuda", load_generator=True):
         self.dev = device
@@ -122,13 +126,25 @@ class ClearChem:
         if tok.pad_token is None:
             tok.pad_token = tok.eos_token
         tok.padding_side = "left"
-        # 必须显式指定 bf16：ether0 的 config.json 里 torch_dtype 写的是 float32，
-        # 不指定就按 fp32 加载，24B 要 88 GB —— 85 GB 的卡直接 OOM，
-        # 而且和知识层（27B bf16，54 GB）根本不可能同时驻留。
-        # bf16 之后生成器约 44 GB，两个模型仍不能同时在一张卡上，
-        # 所以 knowledge.py 和这里都做懒加载，谁用谁载。
-        base = AutoModelForCausalLM.from_pretrained(
-            SNAP, device_map={"": 0}, dtype=torch.bfloat16, trust_remote_code=True)
+        # 默认 4-bit NF4：适配器就是在 4-bit 量化底座上训的，
+        # 用 bf16 加载等于换了个底座精度。实测同一组目标：
+        #     bf16   MAE 0.0442  ±0.03 内 10/24  显存 45.3 GB
+        #     4-bit  MAE 0.0352  ±0.03 内 12/24  显存 17.1 GB
+        # 4-bit 反而更准（训练时就是它），且省 28 GB —— 省下来的显存让
+        # 生成器(17)与知识层(54)能同时驻留在 85 GB 的卡上，不用来回换。
+        # 环境变量 CLEARCHEM_GEN_DTYPE=bf16 可切回。
+        _mode = os.environ.get("CLEARCHEM_GEN_DTYPE", "4bit")
+        if _mode == "4bit":
+            from transformers import BitsAndBytesConfig
+            base = AutoModelForCausalLM.from_pretrained(
+                SNAP, device_map={"": 0}, trust_remote_code=True,
+                quantization_config=BitsAndBytesConfig(
+                    load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_use_double_quant=True))
+        else:
+            base = AutoModelForCausalLM.from_pretrained(
+                SNAP, device_map={"": 0}, dtype=torch.bfloat16, trust_remote_code=True)
         model = PeftModel.from_pretrained(base, ADP); model.eval()
         hid = model.get_input_embeddings().weight.shape[1]
 
@@ -146,8 +162,13 @@ class ClearChem:
         self.gen = (tok, model, enc.to(0).eval())
 
     # ---------- 分子层 ----------
-    def predict(self, smis, props=None):
-        """预测分子性质。返回 {smiles: {prop: value}}，附尺子可信度。"""
+    def predict(self, smis, props=None, force=False):
+        """预测分子性质。返回 {smiles: {prop: value}}，附尺子可信度。
+
+        电解液类分子会被拦下并指向 orbitals()：这些分子上尺子的排序是反的，
+        而且不报错，调用方拿到的是一个看起来正常的错误答案。
+        真要跑可以传 force=True，但返回值里会带明确的不可信标记。
+        """
         props = props or list(self.scorers)
         feats, keep = [], []
         for i, s in enumerate(smis):
@@ -157,6 +178,20 @@ class ClearChem:
         if not feats:
             return {}
         out = {smis[i]: {} for i in keep}
+
+        # 路由：电解液类分子走 xTB，不走尺子。
+        hits = {smis[i]: _electrolyte_like(smis[i]) for i in keep}
+        hits = {k: v for k, v in hits.items() if v}
+        if hits and not force:
+            return {"error": "电解液类分子请用 orbitals()，不要用 predict()",
+                    "reason": ("尺子在这些分子上电化学排序 2/6（随机 3/6），"
+                               "把 VC/FEC 判成比 EC 更难还原，与成膜机理相反。"
+                               "根因是碳酸酯 LUMO 真实跨度 1.17 eV 被压成 0.27 eV，"
+                               "而尺子自身 MAE 就是 0.28 eV。"),
+                    "matched": hits,
+                    "use_instead": "orbitals(smiles)  —— 同一套检验 6/6",
+                    "override": "确实要跑：predict(smiles, force=True)"}
+
         for p in props:
             if p not in self.scorers:
                 continue
@@ -166,6 +201,10 @@ class ClearChem:
                 v = net(torch.tensor(X.astype(np.float32))).squeeze(-1).numpy() * sd + mu
             for i, x in zip(keep, v):
                 out[smis[i]][p] = round(float(x), 3)
+        if hits:
+            out["_warning"] = ("以下分子是电解液类，尺子的排序在这里不可信：%s。"
+                               "这些数值只能当粗略参考，比较高低请用 orbitals()。"
+                               % ", ".join("%s(%s)" % (k[:20], v) for k, v in hits.items()))
         return out
 
     def design_molecule(self, targets, n=10, k=None, temp=1.4):
@@ -209,7 +248,10 @@ class ClearChem:
         uniq = sorted(set(smis))
         if not uniq:
             return {"error": "未生成合法分子", "n_raw": len(prompts)}
-        pred = self.predict(uniq, list(targets))
+        # 内部打分必须绕过路由：路由是拦外部误用的，不该拦自己。
+        # 实测没加 force 时生成器产出 192 个分子但一个都没打分 ——
+        # 候选里的碳酸酯被自己的路由挡住了，results 直接是空的。
+        pred = self.predict(uniq, list(targets), force=True)
         out = []
         for s in uniq:
             if any(p not in pred.get(s, {}) for p in targets if p in self.scorers):
